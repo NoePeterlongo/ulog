@@ -1,0 +1,11 @@
+{
+  "name": "ulog",
+  "version": "0.1.0",
+  "description": "Media-agnostic ULog writer (PX4 ULog file format)",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src"
+  }
+}
