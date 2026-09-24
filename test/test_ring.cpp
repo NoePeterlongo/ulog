@@ -171,3 +171,31 @@ void test_async_roundtrip_file() {
   TEST_ASSERT_TRUE(sink.sync());
   TEST_ASSERT_TRUE(sink.close());
 }
+
+void test_ring_zero_capacity() {
+  RingBuffer ring(nullptr, 0);
+  uint8_t byte = 0;
+
+  TEST_ASSERT_EQUAL_UINT32(0, ring.used());
+  TEST_ASSERT_EQUAL_UINT32(0, ring.read(&byte, 1));
+  TEST_ASSERT_FALSE(ring.write(&byte, 1));
+  TEST_ASSERT_TRUE(ring.write(&byte, 0));
+}
+
+void test_ring_empty_messages() {
+  uint8_t storage[8];
+  RingBuffer ring(storage, sizeof(storage));
+
+  ring.start_message();
+  ring.commit_message();  // empty message
+  TEST_ASSERT_EQUAL_UINT32(0, ring.used());
+
+  ring.start_message();
+  TEST_ASSERT_TRUE(ring.write(nullptr, 0));
+  ring.commit_message();
+  TEST_ASSERT_EQUAL_UINT32(0, ring.used());
+
+  ring.start_message();
+  ring.rollback_message();  // rollback of nothing
+  TEST_ASSERT_EQUAL_UINT32(0, ring.used());
+}

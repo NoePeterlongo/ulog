@@ -64,9 +64,12 @@ bool for_each_field(const char* fields, FieldVisitor visitor, void* ctx) {
     const char* name = p;
     size_t name_len = 0;
     while (*p != '\0' && *p != ';') {
-      if (!is_field_name_char(*p)) return false;
       ++p;
       ++name_len;
+    }
+    while (name_len > 0 && is_space(name[name_len - 1])) --name_len;
+    for (size_t i = 0; i < name_len; ++i) {
+      if (!is_field_name_char(name[i])) return false;
     }
     if (name_len == 0) return false;
     if (*p == ';') ++p;

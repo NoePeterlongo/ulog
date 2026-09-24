@@ -107,7 +107,11 @@ class Lz4Sink final : public Sink {
       return false;
     }
     frame_begun_ = true;
-    return inner_.write(dst_, written);
+    if (!inner_.write(dst_, written)) {
+      ok_ = false;
+      return false;
+    }
+    return true;
   }
 
   bool flush() {

@@ -82,4 +82,22 @@ inline uint64_t le64(const uint8_t* p) {
   return v;
 }
 
+// Sink that always fails, to exercise error paths.
+class FailingSink final : public ulog::Sink {
+ public:
+  bool write(const uint8_t*, size_t) override { return false; }
+};
+
+// Deterministic, half-repetitive test pattern: compressible but not trivially so.
+inline std::vector<uint8_t> make_pattern(size_t size) {
+  std::vector<uint8_t> pattern(size);
+  uint32_t x = 12345;
+  for (size_t i = 0; i < size; ++i) {
+    x = x * 1664525u + 1013904223u;
+    pattern[i] = (i % 64 < 48) ? static_cast<uint8_t>(i)
+                               : static_cast<uint8_t>(x >> 24);
+  }
+  return pattern;
+}
+
 }  // namespace ulog_test

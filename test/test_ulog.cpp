@@ -223,8 +223,7 @@ void test_log_text() {
   TEST_ASSERT_EQUAL_STRING("low battery", sub_str(msg, 9, msg.payload.size()).c_str());
 }
 
-void test_info_and_params() {
-  RamSink sink;
+void test_info_and_params() {  RamSink sink;
   Writer writer{sink, test_config()};
 
   TEST_ASSERT_TRUE(writer.add_info("sys_name", "myproj"));
@@ -332,4 +331,126 @@ void test_roundtrip_file() {
 
   TEST_ASSERT_TRUE(sink.sync());
   TEST_ASSERT_TRUE(sink.close());
+}
+
+void test_info_numeric_types() {
+  RamSink sink;
+  Writer writer{sink, test_config()};
+
+  TEST_ASSERT_TRUE(writer.add_info("i8", static_cast<int8_t>(-5)));
+  TEST_ASSERT_TRUE(writer.add_info("flag", true));
+  TEST_ASSERT_TRUE(writer.add_info("big", static_cast<uint64_t>(0x1122334455667788ULL)));
+  TEST_ASSERT_TRUE(writer.add_info("ratio", 2.5f));
+  TEST_ASSERT_TRUE(writer.add_info("pi", 3.5));
+  TEST_ASSERT_TRUE(writer.add_info("u8", static_cast<uint8_t>(200)));
+
+  Reader reader(sink.bytes());
+  Msg msg;
+  TEST_ASSERT_TRUE(reader.next(msg));  // 'B'
+
+  TEST_ASSERT_TRUE(reader.next(msg));
+  TEST_ASSERT_EQUAL_UINT8('I', msg.type);
+  TEST_ASSERT_EQUAL_STRING("int8_t i8", sub_str(msg, 1, 10).c_str());
+  TEST_ASSERT_EQUAL_UINT8(0xFB, msg.payload[10]);
+
+  TEST_ASSERT_TRUE(reader.next(msg));
+  TEST_ASSERT_EQUAL_STRING("bool flag", sub_str(msg, 1, 10).c_str());
+  TEST_ASSERT_EQUAL_UINT8(1, msg.payload[10]);
+
+  TEST_ASSERT_TRUE(reader.next(msg));
+  TEST_ASSERT_EQUAL_STRING("uint64_t big", sub_str(msg, 1, 13).c_str());
+  TEST_ASSERT_EQUAL_UINT64(0x1122334455667788ULL, le64(msg.payload.data() + 13));
+
+  TEST_ASSERT_TRUE(reader.next(msg));
+  TEST_ASSERT_EQUAL_STRING("float ratio", sub_str(msg, 1, 12).c_str());
+  float ratio = 0;
+  memcpy(&ratio, msg.payload.data() + 12, sizeof(ratio));
+  TEST_ASSERT_EQUAL_FLOAT(2.5f, ratio);
+
+  TEST_ASSERT_TRUE(reader.next(msg));
+  TEST_ASSERT_EQUAL_STRING("double pi", sub_str(msg, 1, 10).c_str());
+  double pi = 0;
+  memcpy(&pi, msg.payload.data() + 10, sizeof(pi));
+  TEST_ASSERT_EQUAL_FLOAT(3.5, pi);
+
+  TEST_ASSERT_TRUE(reader.next(msg));
+  TEST_ASSERT_EQUAL_STRING("uint8_t u8", sub_str(msg, 1, 11).c_str());
+  TEST_ASSERT_EQUAL_UINT8(200, msg.payload[11]);
+
+  TEST_ASSERT_FALSE(reader.next(msg));
+}
+
+void test_add_info_limits() {
+  RamSink sink;
+  Writer writer{sink, test_config()};
+
+  std::string name_23(23, 'n');
+  std::string name_24(24, 'n');
+  std::string value_150(150, 'v');
+  std::string value_200(200, 'v');
+
+  TEST_ASSERT_TRUE(writer.add_info(name_23.c_str(), value_150.c_str()));
+  TEST_ASSERT_FALSE(writer.add_info(name_24.c_str(), value_150.c_str()));
+  TEST_ASSERT_FALSE(writer.add_info("ok", value_200.c_str()));
+  TEST_ASSERT_FALSE(writer.add_info("bad-name!", "x"));
+}
+
+void test_declare_limits() {
+  RamSink sink;
+  Writer writer{sink, test_config()};
+
+  int accepted = 0;
+  for (int i = 0; i < 33; ++i) {
+    char name[8];
+    snprintf(name, sizeof(name), "f%02d", i);
+    if (writer.declare(name, "uint64_t timestamp;")) ++accepted;
+  }
+  TEST_ASSERT_EQUAL_INT(32, accepted);  // registry full after kMaxFormats
+
+  RamSink sink2;
+  Writer writer2{sink2, test_config()};
+  const std::string name_23(23, 'n');
+  const std::string name_24(24, 'n');
+  TEST_ASSERT_TRUE(static_cast<bool>(writer2.declare(name_23.c_str(), "uint64_t timestamp;")));
+  TEST_ASSERT_FALSE(static_cast<bool>(writer2.declare(name_24.c_str(), "uint64_t timestamp;")));
+
+  // payload must stay under the ULog 16-bit message size
+  TEST_ASSERT_FALSE(static_cast<bool>(writer2.declare("toobig", "uint64_t timestamp;float[16384] v;")));
+  auto okbig = writer2.declare("okbig", "uint64_t timestamp;float[16381] v;");
+  TEST_ASSERT_TRUE(static_cast<bool>(okbig));
+  TEST_ASSERT_EQUAL_UINT16(8 + 4 * 16381, okbig.payload_size());
+
+  // parser rejects absurd array lengths before any size math
+  TEST_ASSERT_FALSE(static_cast<bool>(writer2.declare("bigarray", "uint64_t timestamp;uint8_t[100001] x;")));
+}
+
+void test_log_text_empty() {
+  RamSink sink;
+  Writer writer{sink, test_config()};
+
+  TEST_ASSERT_TRUE(writer.log_text(ulog::Level::Debug, ""));
+
+  Reader reader(sink.bytes());
+  Msg msg;
+  TEST_ASSERT_TRUE(reader.next(msg));  // 'B'
+  TEST_ASSERT_TRUE(reader.next(msg));
+  TEST_ASSERT_EQUAL_UINT8('L', msg.type);
+  TEST_ASSERT_EQUAL_UINT32(9, msg.payload.size());
+  TEST_ASSERT_EQUAL_UINT8(7, msg.payload[0]);
+  TEST_ASSERT_EQUAL_UINT64(g_now, le64(msg.payload.data() + 1));
+  TEST_ASSERT_FALSE(reader.next(msg));
+}
+
+void test_writer_reports_sink_failure() {
+  FailingSink sink;
+  Writer writer{sink, test_config()};
+
+  TEST_ASSERT_FALSE(writer.log_text(ulog::Level::Info, "x"));
+  TEST_ASSERT_FALSE(static_cast<bool>(writer.declare("t", "uint64_t timestamp;float v;")));
+  TEST_ASSERT_FALSE(writer.add_param("p", 1.0f));
+  TEST_ASSERT_FALSE(writer.add_info("i", "v"));
+  TEST_ASSERT_FALSE(writer.log_dropout(10));
+
+  auto topic = writer.declare("t2", "uint64_t timestamp;float v;");
+  TEST_ASSERT_FALSE(static_cast<bool>(topic));  // 'F' write failed too
 }

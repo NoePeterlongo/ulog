@@ -75,3 +75,76 @@ void test_lz4_roundtrip_file() {
   TEST_ASSERT_TRUE(lz4.finish());
   TEST_ASSERT_TRUE(file_sink.close());
 }
+
+void test_lz4_large_multiblock() {
+  const std::vector<uint8_t> pattern = make_pattern(200 * 1024);
+
+  ulog::FileSink raw("/tmp/lz4_large.raw");
+  TEST_ASSERT_TRUE(raw.write(pattern.data(), pattern.size()));
+  TEST_ASSERT_TRUE(raw.close());
+
+  ulog::FileSink file("/tmp/lz4_large.lz4");
+  Lz4Sink lz4(file);
+  TEST_ASSERT_TRUE(lz4.is_valid());
+  TEST_ASSERT_TRUE(lz4.write(pattern.data(), 30 * 1024));
+  TEST_ASSERT_TRUE(lz4.write(pattern.data() + 30 * 1024, 70 * 1024));  // > one block
+  TEST_ASSERT_TRUE(lz4.write(pattern.data() + 100 * 1024, 100 * 1024));
+  TEST_ASSERT_TRUE(lz4.finish());
+  TEST_ASSERT_TRUE(file.close());
+}
+
+void test_lz4_options() {
+  Lz4Sink::Config config;
+  config.independent_blocks = false;  // linked blocks
+  config.content_checksum = true;
+  config.compression_level = 9;       // LZ4HC
+
+  const std::vector<uint8_t> pattern = make_pattern(100 * 1024);
+
+  ulog::FileSink raw("/tmp/lz4_options.raw");
+  TEST_ASSERT_TRUE(raw.write(pattern.data(), pattern.size()));
+  TEST_ASSERT_TRUE(raw.close());
+
+  ulog::FileSink file("/tmp/lz4_options.lz4");
+  Lz4Sink lz4(file, config);
+  TEST_ASSERT_TRUE(lz4.is_valid());
+  TEST_ASSERT_TRUE(lz4.write(pattern.data(), pattern.size()));
+  TEST_ASSERT_TRUE(lz4.finish());
+  TEST_ASSERT_TRUE(file.close());
+}
+
+void test_lz4_inner_failure() {
+  FailingSink inner;
+  Lz4Sink lz4(inner);
+  TEST_ASSERT_TRUE(lz4.is_valid());
+
+  const uint8_t data[16] = {};
+  TEST_ASSERT_FALSE(lz4.write(data, sizeof(data)));
+  TEST_ASSERT_FALSE(lz4.write(data, sizeof(data)));  // failed state is sticky
+  TEST_ASSERT_FALSE(lz4.sync());
+  TEST_ASSERT_FALSE(lz4.finish());
+}
+
+void test_lz4_crash_prefix() {
+  // Simulates a crash: data flushed by sync() but no frame footer.
+  const std::vector<uint8_t> pattern = make_pattern(150 * 1024);
+
+  ulog::FileSink raw("/tmp/lz4_crash.raw");
+  TEST_ASSERT_TRUE(raw.write(pattern.data(), pattern.size()));
+  TEST_ASSERT_TRUE(raw.close());
+
+  ulog::FileSink file("/tmp/lz4_crash.lz4");
+  Lz4Sink lz4(file);
+  TEST_ASSERT_TRUE(lz4.write(pattern.data(), pattern.size()));
+  TEST_ASSERT_TRUE(lz4.sync());  // flushes the partial block
+  TEST_ASSERT_TRUE(file.close());  // no finish(): footer missing
+}
+
+void test_file_sink_failure() {
+  ulog::FileSink bad("/nonexistent_dir/x.ulg");
+  TEST_ASSERT_FALSE(bad.is_open());
+  const uint8_t byte = 0;
+  TEST_ASSERT_FALSE(bad.write(&byte, 1));
+  TEST_ASSERT_FALSE(bad.sync());
+  TEST_ASSERT_TRUE(bad.close());  // closing a failed sink is a no-op
+}

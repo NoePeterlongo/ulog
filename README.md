@@ -130,10 +130,11 @@ src/main.cpp            ESP32-S3 example firmware
 Everything except the two ESP32-only headers runs on the host:
 
 ```
-pio test -e native                       # 19 Unity tests
+pio test -e native                       # 33 Unity tests
 python3 test/pyulog_check.py              # sync round-trip, strict expectations
 python3 test/pyulog_check.py --profile async   # ring drops -> 'O' messages
-python3 test/pyulog_check.py --profile lz4     # LZ4 frame -> decompress -> pyulog
+python3 test/pyulog_check.py --profile lz4     # LZ4 frames: round-trip, multi-block,
+                                               # checksum/HC configs, crash-prefix recovery
 ```
 
 The Unity tests themselves write the `.ulg` files that the pyulog script then

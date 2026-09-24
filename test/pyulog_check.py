@@ -64,6 +64,43 @@ def check_async(path: str) -> None:
           f"{total_dropped} ms dropped")
 
 
+def _check_pair(compressed_path: str, raw_path: str) -> None:
+    import lz4.frame
+
+    with open(compressed_path, "rb") as f:
+        compressed = f.read()
+    with open(raw_path, "rb") as f:
+        raw = f.read()
+    decompressed = lz4.frame.decompress(compressed)
+    assert decompressed == raw, \
+        f"{compressed_path}: decompressed data differs from {raw_path}"
+    assert len(compressed) < len(raw), "data did not compress"
+    print(f"OK: {compressed_path} ({len(raw)} -> {len(compressed)} bytes, "
+          f"{100 - 100 * len(compressed) // len(raw)}% saved)")
+
+
+def _check_crash_prefix(compressed_path: str, raw_path: str) -> None:
+    import lz4.frame
+
+    # No frame footer: everything flushed by sync() must survive, exactly as a
+    # host tool would recover a log from a device that crashed mid-write.
+    decompressor = lz4.frame.LZ4FrameDecompressor()
+    with open(compressed_path, "rb") as f:
+        data = f.read()
+    try:
+        recovered = decompressor.decompress(data)
+    except lz4.frame.LZ4FError:
+        recovered = b""
+
+    with open(raw_path, "rb") as f:
+        raw = f.read()
+    assert recovered == raw, \
+        f"{compressed_path}: recovered {len(recovered)} of {len(raw)} bytes"
+    assert not decompressor.eof, "frame should be truncated (no footer)"
+    print(f"OK: {compressed_path} crash-prefix fully recovered "
+          f"({len(recovered)}/{len(raw)} bytes, frame truncated as expected)")
+
+
 def check_lz4(path: str) -> None:
     import lz4.frame
 
@@ -79,6 +116,10 @@ def check_lz4(path: str) -> None:
           f"({len(compressed)} -> {len(decompressed)} bytes, "
           f"{100 - 100 * len(compressed) // len(decompressed)}% saved)")
     check_sync(out)
+
+    _check_pair("/tmp/lz4_large.lz4", "/tmp/lz4_large.raw")
+    _check_pair("/tmp/lz4_options.lz4", "/tmp/lz4_options.raw")
+    _check_crash_prefix("/tmp/lz4_crash.lz4", "/tmp/lz4_crash.raw")
 
 
 def main() -> int:

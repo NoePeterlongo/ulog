@@ -25,6 +25,7 @@ class RingBuffer {
   void start_message() { write_pos_ = head_.load(std::memory_order_relaxed); }
 
   bool write(const uint8_t* data, size_t size) {
+    if (size == 0) return true;
     const uint32_t tail = tail_.load(std::memory_order_acquire);
     if (size > capacity_ - (write_pos_ - tail)) return false;
     const uint32_t index = write_pos_ % capacity_;
@@ -44,6 +45,7 @@ class RingBuffer {
     const uint32_t head = head_.load(std::memory_order_acquire);
     const uint32_t available = head - tail;
     const size_t n = (max < available) ? max : available;
+    if (n == 0) return 0;
     const uint32_t index = tail % capacity_;
     const size_t first = (capacity_ - index < n) ? capacity_ - index : n;
     memcpy(out, storage_ + index, first);

@@ -4,6 +4,7 @@
   "description": "Media-agnostic ULog writer (PX4 ULog file format)",
   "frameworks": "*",
   "platforms": "*",
+  "readme": "README.md",
   "build": {
     "includeDir": "include",
     "srcDir": "src"

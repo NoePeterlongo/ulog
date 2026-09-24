@@ -23,6 +23,20 @@ void test_writer_log_dropout();
 void test_async_roundtrip_file();
 void test_lz4_frame();
 void test_lz4_roundtrip_file();
+void test_lz4_large_multiblock();
+void test_lz4_options();
+void test_lz4_inner_failure();
+void test_lz4_crash_prefix();
+void test_file_sink_failure();
+void test_for_each_field_basics();
+void test_for_each_field_rejects();
+void test_info_numeric_types();
+void test_add_info_limits();
+void test_declare_limits();
+void test_log_text_empty();
+void test_writer_reports_sink_failure();
+void test_ring_zero_capacity();
+void test_ring_empty_messages();
 
 int main(int argc, char **argv) {
   UNITY_BEGIN();
@@ -45,5 +59,19 @@ int main(int argc, char **argv) {
   RUN_TEST(test_async_roundtrip_file);
   RUN_TEST(test_lz4_frame);
   RUN_TEST(test_lz4_roundtrip_file);
+  RUN_TEST(test_lz4_large_multiblock);
+  RUN_TEST(test_lz4_options);
+  RUN_TEST(test_lz4_inner_failure);
+  RUN_TEST(test_lz4_crash_prefix);
+  RUN_TEST(test_file_sink_failure);
+  RUN_TEST(test_for_each_field_basics);
+  RUN_TEST(test_for_each_field_rejects);
+  RUN_TEST(test_info_numeric_types);
+  RUN_TEST(test_add_info_limits);
+  RUN_TEST(test_declare_limits);
+  RUN_TEST(test_log_text_empty);
+  RUN_TEST(test_writer_reports_sink_failure);
+  RUN_TEST(test_ring_zero_capacity);
+  RUN_TEST(test_ring_empty_messages);
   return UNITY_END();
 }
