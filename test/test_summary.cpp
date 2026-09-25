@@ -57,8 +57,9 @@ void test_log_summary_stats() {
   TEST_ASSERT_TRUE(writer.log_dropout(1234));
 
   Collector collector;
-  LogSummary s = summarize_ulog(sink.bytes().data(), sink.bytes().size(),
-                               collect, &collector);
+  ulog::LogSummary s = ulog::summarize_ulog(sink.bytes().data(),
+                                            sink.bytes().size(),
+                                            collect, &collector);
 
   TEST_ASSERT_EQUAL_UINT32(sink.bytes().size(), s.bytes);
   TEST_ASSERT_EQUAL_UINT16(2, s.formats);
@@ -85,7 +86,7 @@ void test_log_summary_truncated() {
   bytes[0] = 0x55;
 
   Collector collector;
-  LogSummary s = summarize_ulog(bytes.data(), bytes.size(), collect, &collector);
+  ulog::LogSummary s = ulog::summarize_ulog(bytes.data(), bytes.size(), collect, &collector);
   TEST_ASSERT_TRUE(s.truncated);
   TEST_ASSERT_EQUAL_UINT32(0, s.formats);
 
@@ -99,7 +100,7 @@ void test_log_summary_truncated() {
   TEST_ASSERT_TRUE(imu.log(ImuSample{1001, {1, 2, 3}, {4, 5, 6}}));
 
   std::vector<uint8_t> cut(sink.bytes().begin(), sink.bytes().end() - 10);
-  LogSummary cut_summary = summarize_ulog(cut.data(), cut.size(), collect, &collector);
+  ulog::LogSummary cut_summary = ulog::summarize_ulog(cut.data(), cut.size(), collect, &collector);
   TEST_ASSERT_TRUE(cut_summary.truncated);
 }
 
@@ -116,19 +117,19 @@ void test_log_summary_streaming_chunks() {
   }
 
   Collector whole;
-  LogSummary reference = summarize_ulog(sink.bytes().data(), sink.bytes().size(),
+  ulog::LogSummary reference = ulog::summarize_ulog(sink.bytes().data(), sink.bytes().size(),
                                         collect, &whole);
 
   for (size_t chunk_size : {size_t(1), size_t(7), size_t(64), size_t(10000)}) {
     Collector streamed;
-    UlogSummary walker(collect, &streamed);
+    ulog::UlogSummary walker(collect, &streamed);
     for (size_t i = 16; i < sink.bytes().size(); i += chunk_size) {
       const size_t n = (i + chunk_size < sink.bytes().size())
                           ? chunk_size
                           : sink.bytes().size() - i;
       walker.feed(sink.bytes().data() + i, n);
     }
-    LogSummary s = walker.finish();
+    ulog::LogSummary s = walker.finish();
     s.bytes = reference.bytes;
     TEST_ASSERT_EQUAL_UINT16(reference.formats, s.formats);
     TEST_ASSERT_EQUAL_UINT16(reference.subscriptions, s.subscriptions);

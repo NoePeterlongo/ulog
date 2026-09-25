@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <string.h>
 
+namespace ulog {
+
 struct LogSummary {
   size_t bytes = 0;
   uint16_t formats = 0;
@@ -142,7 +144,7 @@ class UlogSummary {
       case 'P': {  // key_len, "type name", value
         if (captured_ < 1) break;
         const uint8_t key_len = p[0];
-        if (1 + key_len > captured_) break;
+        if (static_cast<size_t>(1 + key_len) > captured_) break;
         const char* key = reinterpret_cast<const char*>(p + 1);
         const uint8_t* value = p + 1 + key_len;
         size_t value_len = size_ - 1 - key_len;
@@ -235,3 +237,5 @@ inline LogSummary summarize_ulog(const uint8_t* data, size_t len,
   summary.bytes = len;
   return summary;
 }
+
+}  // namespace ulog

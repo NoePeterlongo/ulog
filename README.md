@@ -115,13 +115,26 @@ include/ulog/          public headers
   format.hpp           ULog field-list parser
 src/                   encoder + parser implementation
 lib/lz4/               vendored lz4 1.9.4 (BSD-2); optional, for Lz4Sink
-examples/esp32_flight_recorder/   standalone PlatformIO project that
-                                  consumes the library like an external
-                                  consumer and flashes on the S3
+examples/              buildable examples (see below)
 test/                  Unity tests (native) + pyulog validation
 tools/pull_littlefs.py extract LittleFS files from a device with esptool
 docs/PX4_ulog/         PX4 ULog format documentation
 ```
+
+## Examples
+
+Each native example is a single `main.cpp` with the exact `g++` command at
+the top — no PlatformIO needed, run from the repository root:
+
+| Example | Shows | Command (from the repo root) |
+|---|---|---|
+| `native_minimal` | declare one topic, log samples, write a `.ulg` | `g++ -std=gnu++17 -Wall -Iinclude examples/native_minimal/main.cpp src/writer.cpp src/format.cpp -o /tmp/minimal && /tmp/minimal` |
+| `native_spool_flight` | the flight-recorder pattern: `SpoolSink` in RAM while flying, burst-append on landing, `UlogSummary` printout (what `debug_dump()` shows on serial) | `g++ -std=gnu++17 -Wall -Iinclude examples/native_spool_flight/main.cpp src/writer.cpp src/format.cpp -o /tmp/spool && /tmp/spool` |
+| `native_lz4` | optional compression into a standard `.lz4` file (needs `lib/lz4/`) | `g++ -std=gnu++17 -Wall -Iinclude -Ilib/lz4/src examples/native_lz4/main.cpp src/writer.cpp src/format.cpp lib/lz4/src/lz4.c lib/lz4/src/lz4hc.c lib/lz4/src/lz4frame.c lib/lz4/src/xxhash.c -o /tmp/lz4demo && /tmp/lz4demo` |
+| `esp32_flight_recorder` | the `LoggerBase` facade on an ESP32-S3: two flights per boot into one file, debug dump over serial | `pio run -d examples/esp32_flight_recorder -t upload` |
+
+All example outputs parse with pyulog; try `pip install pyulog` and
+`pyulog info /tmp/ulog_minimal.ulg`.
 
 ## Options
 
