@@ -85,7 +85,25 @@ flash.close();
 ```
 
 A complete firmware example lives in `src/main.cpp` (PlatformIO,
-`seeed_xiao_esp32s3`).
+`seeed_xiao_esp32s3`). It uses the `Logger` flight-recorder facade
+(`src/logger.hpp`): `begin()` records into RAM while running — no flash
+stalls, full 200 Hz on the example loop — and `write_to_flash()` persists
+the whole session to LittleFS once producers are stopped.
+
+### Getting logs off the device
+
+`tools/pull_littlefs.py` reads the LittleFS partition over serial with esptool
+and extracts every file to a host directory:
+
+```
+python3 tools/pull_littlefs.py --port /dev/ttyACM0 --out logs/
+python3 tools/pull_littlefs.py --image littlefs.bin --out logs/   # existing dump
+lz4 -d logs/log001.ulg.lz4 logs/log001.ulg                        # if compressed
+```
+
+It auto-detects the DATA/SPIFFS partition from the partition table
+(`--label spiffs` to pick one explicitly, `--keep-dump` to keep the raw
+image). Requires `esptool` and `pip install littlefs-python`.
 
 ### Compression
 
@@ -100,10 +118,11 @@ host$ pyulog info log001.ulg            # standard toolchain
 
 Trade-offs: typical ratio 2-4x on sensor data, negligible CPU on the drain
 task at embedded rates, but a crash loses the tail since the last flush (the
-drain task flushes whenever the ring goes idle) and a corrupted 64 KB block
-ends recovery there. Blocks are independent by default so a corrupted block
-does not compromise the following ones. RAM cost is about 130 KB (LZ4 context
-+ compression buffer), internal heap.
+drain task flushes when a burst completes; raise `flush_interval_ms` to batch
+more and touch the flash less) and a corrupted 64 KB block ends recovery
+there. Blocks are independent by default so a corrupted block does not
+compromise the following ones. RAM cost is about 130 KB (LZ4 context +
+compression buffer), internal heap.
 
 ## Layout
 

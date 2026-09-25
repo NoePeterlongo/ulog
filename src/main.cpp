@@ -1,11 +1,8 @@
 #include <Arduino.h>
-#include <esp_heap_caps.h>
 #include <esp_timer.h>
 #include <math.h>
 
-#include "ulog/async.hpp"
-#include "ulog/littlefs_sink.hpp"
-#include "ulog/lz4_sink.hpp"
+#include "logger.hpp"
 
 namespace {
 
@@ -21,16 +18,31 @@ struct __attribute__((packed)) BaroSample {
   float temperature_deg;
 };
 
-constexpr size_t kRingSize = 64 * 1024;
-constexpr uint32_t kLogDurationMs = 15000;
+// Two flights per boot: takeoff, land, take off again, land, done.
+constexpr uint32_t kFlightMs[] = {15000, 10000};
+constexpr uint32_t kGroundPauseMs = 4000;
 
-ulog::LittleFsSink* flash_sink = nullptr;
-ulog::Lz4Sink* sink = nullptr;
-ulog::AsyncWriter* logger = nullptr;
+// Logger goes into the application/hfsm2 context; here a global stands in.
+Logger* logger = nullptr;
 ulog::Message imu;
 ulog::Message baro;
-uint32_t started_ms = 0;
+
+int session = 0;
+uint32_t session_started_ms = 0;
+uint32_t ground_until_ms = 0;
 bool done = false;
+
+bool start_session() {
+  if (!logger->begin()) return false;
+  logger->add_info("sys_name", "ulog-esp32-example");
+  logger->add_param("pid_kp", 1.5f);
+  imu = logger->declare(
+      "sensor_imu", "uint64_t timestamp;float[3] gyro_rad;float[3] accel_mps2;");
+  baro = logger->declare(
+      "sensor_baro", "uint64_t timestamp;float pressure_pa;float temperature_deg;");
+  session_started_ms = millis();
+  return true;
+}
 
 }  // namespace
 
@@ -38,45 +50,11 @@ void setup() {
   Serial.begin(115200);
   delay(2000);  // let the serial console attach
 
-  uint8_t* ring_storage =
-      static_cast<uint8_t*>(heap_caps_malloc(kRingSize, MALLOC_CAP_SPIRAM));
-  if (ring_storage == nullptr) {
-    ring_storage = static_cast<uint8_t*>(malloc(kRingSize));  // PSRAM fallback
+  // %03d: each flight gets its own file (log001, log002, ...)
+  logger = new Logger("/log%03d.ulg.lz4");
+  if (!start_session()) {
+    Serial.println("ERROR: cannot start the recording session");
   }
-  if (ring_storage == nullptr) {
-    Serial.println("ERROR: cannot allocate the log ring buffer");
-    return;
-  }
-
-  flash_sink = new ulog::LittleFsSink("/log001.ulg.lz4");
-  if (!flash_sink->open()) {
-    Serial.println("ERROR: cannot open /log001.ulg.lz4 on LittleFS");
-    return;
-  }
-  sink = new ulog::Lz4Sink(*flash_sink);  // compressed log: decompress on host
-  if (!sink->is_valid()) {
-    Serial.println("ERROR: cannot initialize LZ4 compression");
-    return;
-  }
-
-  ulog::Writer::Config writer_config;  // default clock: esp_timer_get_time()
-  ulog::AsyncWriter::Config async_config;
-  async_config.ring_storage = ring_storage;
-  async_config.ring_size = kRingSize;
-  logger = new ulog::AsyncWriter(*sink, writer_config, async_config);
-  if (!logger->start()) {
-    Serial.println("ERROR: cannot start the drain task");
-    return;
-  }
-
-  logger->add_info("sys_name", "ulog-esp32-example");
-  logger->add_info("ver_hw", "seeed_xiao_esp32s3");
-  logger->add_param("pid_kp", 1.5f);
-  imu = logger->declare(
-      "sensor_imu", "uint64_t timestamp;float[3] gyro_rad;float[3] accel_mps2;");
-  baro = logger->declare(
-      "sensor_baro", "uint64_t timestamp;float pressure_pa;float temperature_deg;");
-  started_ms = millis();
 }
 
 void loop() {
@@ -85,17 +63,35 @@ void loop() {
     return;
   }
 
-  if (millis() - started_ms > kLogDurationMs) {
-    logger->stop();
-    sink->finish();
-    const size_t written = flash_sink->size();
-    flash_sink->close();
-    Serial.printf("log complete: %u compressed bytes in /log001.ulg.lz4\n",
-                  static_cast<unsigned>(written));
-    Serial.printf("decompress on host: lz4 -d log001.ulg.lz4 log001.ulg\n");
-    Serial.printf("littlefs used: %u bytes\n",
-                  static_cast<unsigned>(LittleFS.usedBytes()));
-    done = true;
+  // "landed": persist, then either pause on the ground or stop
+  if (logger->running() && millis() - session_started_ms > kFlightMs[session]) {
+    const size_t in_ram = logger->bytes_logged();
+    if (!logger->write_to_flash()) {
+      Serial.println("ERROR: persisting to flash failed");
+    }
+    Serial.printf("flight %d persisted: %u bytes in RAM -> %u bytes in %s\n",
+                  session + 1, static_cast<unsigned>(in_ram),
+                  static_cast<unsigned>(logger->last_flash_bytes()),
+                  logger->session_path());
+    ++session;
+    if (session >= 2) {
+      Serial.println("all flights recorded, pulling off device with "
+                     "tools/pull_littlefs.py");
+      done = true;
+      return;
+    }
+    ground_until_ms = millis() + kGroundPauseMs;
+    return;
+  }
+
+  // on the ground between flights
+  if (!logger->running()) {
+    if (millis() >= ground_until_ms) {
+      if (!start_session()) {
+        Serial.println("ERROR: cannot re-start the recording session");
+        done = true;
+      }
+    }
     return;
   }
 

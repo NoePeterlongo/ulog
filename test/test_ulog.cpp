@@ -218,7 +218,7 @@ void test_log_text() {
   TEST_ASSERT_TRUE(reader.next(msg));
   TEST_ASSERT_EQUAL_UINT8('L', msg.type);
   TEST_ASSERT_EQUAL_UINT32(9 + strlen("low battery"), msg.payload.size());
-  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(ulog::Level::Warning), msg.payload[0]);
+  TEST_ASSERT_EQUAL_UINT8('0' + static_cast<uint8_t>(ulog::Level::Warning), msg.payload[0]);
   TEST_ASSERT_EQUAL_UINT64(g_now, le64(msg.payload.data() + 1));
   TEST_ASSERT_EQUAL_STRING("low battery", sub_str(msg, 9, msg.payload.size()).c_str());
 }
@@ -436,7 +436,7 @@ void test_log_text_empty() {
   TEST_ASSERT_TRUE(reader.next(msg));
   TEST_ASSERT_EQUAL_UINT8('L', msg.type);
   TEST_ASSERT_EQUAL_UINT32(9, msg.payload.size());
-  TEST_ASSERT_EQUAL_UINT8(7, msg.payload[0]);
+  TEST_ASSERT_EQUAL_UINT8('0' + static_cast<uint8_t>(ulog::Level::Debug), msg.payload[0]);
   TEST_ASSERT_EQUAL_UINT64(g_now, le64(msg.payload.data() + 1));
   TEST_ASSERT_FALSE(reader.next(msg));
 }

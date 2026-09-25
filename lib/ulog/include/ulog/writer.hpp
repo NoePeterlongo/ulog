@@ -8,6 +8,8 @@
 
 namespace ulog {
 
+// Log levels, same values as the Linux kernel (0-7). On the wire, the 'L' and
+// 'C' messages carry them as ASCII digits '0'-'7', matching PX4 and pyulog.
 enum class Level : uint8_t {
   Emergency = 0,
   Alert = 1,

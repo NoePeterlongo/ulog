@@ -36,8 +36,8 @@ def check_sync(path: str) -> None:
 
     assert ulog.initial_parameters == {"pid_kp": 1.5, "mode": 3}
 
-    texts = [(m.log_level, m.message) for m in ulog.logged_messages]
-    assert texts == [(6, "host round-trip log"), (4, "synthetic data")], texts
+    texts = [(m.log_level_str(), m.message) for m in ulog.logged_messages]
+    assert texts == [("INFO", "host round-trip log"), ("WARNING", "synthetic data")], texts
 
     print(f"OK: {path} is a valid ULog file (sync)")
     print(f"    start={ulog.start_timestamp} last={ulog.last_timestamp} "

@@ -42,6 +42,10 @@ class AsyncWriter {
     uint8_t* ring_storage = nullptr;
     size_t ring_size = 0;
     size_t drain_chunk = 1024;
+    // Max time (ms) data may sit in the ring before being written out.
+    // Larger values batch sink writes (fewer flash operations on LittleFS);
+    // 0 writes and flushes as soon as data is available.
+    uint32_t flush_interval_ms = 100;
     uint32_t task_stack_bytes = 4096;
     UBaseType_t task_priority = 3;
     // 0 or 1 to pin the drain task to a core, tskNO_AFFINITY (default) otherwise.
@@ -130,12 +134,19 @@ class AsyncWriter {
   static void drain_entry(void* ctx) { static_cast<AsyncWriter*>(ctx)->drain(); }
 
   void drain() {
+    const TickType_t interval = pdMS_TO_TICKS(config_.flush_interval_ms);
+    TickType_t last_write = xTaskGetTickCount();
     bool dirty = false;
     while (true) {
-      const size_t n = ring_.read(chunk_, config_.drain_chunk);
-      if (n > 0) {
+      const TickType_t now = xTaskGetTickCount();
+      const bool due = interval == 0 || now - last_write >= interval;
+      if (ring_.used() > 0 &&
+          (ring_.used() >= config_.drain_chunk || due || stop_requested_)) {
+        const size_t n = ring_.read(chunk_, config_.drain_chunk);
         sink_.write(chunk_, n);
         dirty = true;
+        last_write = now;
+        continue;
       }
 
       const uint32_t dropped = target_.take_dropped_ms();
@@ -143,13 +154,11 @@ class AsyncWriter {
 
       if (stop_requested_ && ring_.used() == 0) break;
 
-      if (n == 0) {
-        if (dirty) {
-          sink_.sync();
-          dirty = false;
-        }
-        vTaskDelay(pdMS_TO_TICKS(2));
+      if (dirty) {
+        sink_.sync();
+        dirty = false;
       }
+      vTaskDelay(pdMS_TO_TICKS(2));
     }
     sink_.sync();
     xSemaphoreGive(done_);

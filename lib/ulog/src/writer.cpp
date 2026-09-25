@@ -326,7 +326,7 @@ bool Writer::log_text(Level level, const char* text, size_t length) {
   data_started_ = true;
   maybe_sync();
   uint8_t payload[9];
-  payload[0] = static_cast<uint8_t>(level);
+  payload[0] = static_cast<uint8_t>('0' + static_cast<unsigned>(level));
   put_le64(payload + 1, now_us_());
   begin_frame();
   bool ok = begin_message('L', 9 + length) && part(payload, sizeof(payload)) &&

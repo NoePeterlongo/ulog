@@ -108,6 +108,47 @@ since the last flush is lost. Blocks are independent, so one corrupted
 64 KB block does not compromise the following ones. Costs about 130 KB
 of internal heap.
 
+### Log to RAM while flying, flush to flash when safe
+
+Every littlefs write/erase suspends the flash cache and stalls code on
+both cores for tens of ms. If other tasks have hard timing requirements
+(control loops, state machines), don't touch flash while they run: log
+into a `RamSink` during the flight, then persist everything in one burst
+after landing:
+
+```cpp
+#include "ulog/async.hpp"
+#include "ulog/littlefs_sink.hpp"
+#include "ulog/lz4_sink.hpp"
+#include "ulog/ram_sink.hpp"
+
+ulog::RamSink flight;              // the whole flight stays in RAM
+ulog::AsyncWriter::Config cfg;
+cfg.ring_storage = heap_caps_malloc(64 * 1024, MALLOC_CAP_SPIRAM);
+cfg.ring_size = 64 * 1024;
+ulog::AsyncWriter logger{flight, ulog::Writer::Config(), cfg};
+logger.start();
+
+// ... log at full rate: producers memcpy into the ring, the drain task
+//     drains into RAM, the flash is never touched ...
+
+logger.stop();                     // after landing, drains + joins
+
+ulog::LittleFsSink flash{"/flight001.ulg.lz4"};
+flash.open();
+ulog::Lz4Sink sink{flash};
+sink.write(flight.bytes().data(), flight.bytes().size());
+sink.finish();
+flash.close();
+```
+
+Budget the RAM: 200 Hz x 37 B is about 7.4 KB/s, so a 3-minute flight
+needs roughly 1.3 MB — PSRAM territory on the S3. The trade-off is the
+opposite of streaming to flash: a crash loses the whole flight, not just
+the tail since the last flush. A hybrid is possible (this pattern while
+things are hot, a second streaming `AsyncWriter` to littlefs for
+lower-rate background data).
+
 ## Options
 
 ### `ulog::Writer::Config`
@@ -123,6 +164,7 @@ of internal heap.
 |---|---|---|
 | `ring_storage` / `ring_size` | – / 0 | Backing memory for the ring, PSRAM recommended. `start()` fails if unset. |
 | `drain_chunk` | 1024 | Max bytes written to the sink per drain iteration. |
+| `flush_interval_ms` | 100 | Max time data may wait in the ring before being written. Higher = fewer flash operations on LittleFS (each erase stalls both cores); 0 = write/flush ASAP. |
 | `task_stack_bytes` | 4096 | Drain task stack. |
 | `task_priority` | 3 | Drain task priority. |
 | `task_core` | `tskNO_AFFINITY` | 0 or 1 to pin the drain task (e.g. 0, since Arduino `loop()` runs on core 1). |
