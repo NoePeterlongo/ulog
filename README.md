@@ -85,10 +85,22 @@ flash.close();
 ```
 
 A complete firmware example lives in `src/main.cpp` (PlatformIO,
-`seeed_xiao_esp32s3`). It uses the `Logger` flight-recorder facade
-(`src/logger.hpp`): `begin()` records into RAM while running — no flash
-stalls, full 200 Hz on the example loop — and `write_to_flash()` persists
-the whole session to LittleFS once producers are stopped.
+`seeed_xiao_esp32s3`). It uses the **flight-recorder facade** now part of
+the library (`ulog/logger.hpp`, `ulog::LoggerBase`): one ULog stream per
+boot, spooled in RAM (no flash access while flying), appended to a single
+file on LittleFS at each `persist()` (call it landed). The facade also
+exposes `erase_flash()`, `restart()`, and `debug_dump(Serial)` which
+prints a human summary of the whole log (file + RAM spool) on demand.
+
+`src/main.cpp` contains `MyLogger`, the project-specific subclass: it
+declares its messages in `on_declare()` and exposes simple `log_imu()` /
+`log_baro()` methods. Tasks log through them without ever seeing
+formats, sinks or files. The demo runs two flights per boot into one
+file, then dumps the summary over serial (send `d`).
+
+Measured on hardware: 200 Hz logging with zero flash stalls during
+flights, zero dropouts, both flights in one file, summary over serial
+identical to what pyulog reports on the host.
 
 ### Getting logs off the device
 
@@ -133,15 +145,21 @@ lib/ulog/               the library
     sink.hpp            Sink interface
     ram_sink.hpp        in-memory sink (tests)
     file_sink.hpp       host stdio sink
-    littlefs_sink.hpp   ESP32 LittleFS sink, optional size cap
+    littlefs_sink.hpp   ESP32 LittleFS sink, optional size cap, append mode
     lz4_sink.hpp        LZ4 frame compression wrapper
     ring.hpp            SPSC ring buffer + RingWriterTarget (drop accounting)
-    async.hpp           AsyncWriter + FreeRtosLock (ESP32)
+    spool_sink.hpp      RAM spool with double-buffer rotate (drone pattern)
+    async.hpp           AsyncWriter (streaming to a slow sink, ESP32)
+    freertos_lock.hpp   FreeRtosLock (ESP32)
+    logger.hpp          LoggerBase flight-recorder facade (ESP32 + Arduino)
+    log_summary.hpp     portable ULog walker behind debug_dump()
     format.hpp          ULog field-list parser
   src/                 encoder + parser implementation
-lib/lz4/                vendored lz4 1.9.4 (BSD-2, see lib/lz4/LICENSE)
+lib/lz4/                vendored lz4 1.9.4 (BSD-2, see lib/lz4/LICENSE);
+                        optional: only needed when ulog/lz4_sink.hpp is used
 test/                   Unity tests (native) + pyulog validation script
-src/main.cpp            ESP32-S3 example firmware
+tools/pull_littlefs.py  esptool-based LittleFS extraction
+src/main.cpp            project-specific MyLogger + ESP32-S3 example firmware
 ```
 
 ## Testing
@@ -149,7 +167,7 @@ src/main.cpp            ESP32-S3 example firmware
 Everything except the two ESP32-only headers runs on the host:
 
 ```
-pio test -e native                       # 33 Unity tests
+pio test -e native                       # 40 Unity tests
 python3 test/pyulog_check.py              # sync round-trip, strict expectations
 python3 test/pyulog_check.py --profile async   # ring drops -> 'O' messages
 python3 test/pyulog_check.py --profile lz4     # LZ4 frames: round-trip, multi-block,

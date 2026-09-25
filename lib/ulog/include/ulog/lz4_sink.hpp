@@ -11,6 +11,10 @@
 // (idle flush) to keep the compression ratio up; call finish() once when
 // logging is over to write the frame footer.
 
+#if !__has_include(<lz4frame.h>)
+#error "ulog/lz4_sink.hpp requires the lz4 library: vendor lib/lz4/ into your project, or drop this include (everything else in ulog works without it)"
+#endif
+
 #include <lz4frame.h>
 
 #include <stdlib.h>

@@ -21,9 +21,11 @@ class LittleFsSink final : public Sink {
   LittleFsSink(const LittleFsSink&) = delete;
   LittleFsSink& operator=(const LittleFsSink&) = delete;
 
-  bool open() {
+  // Opens the file; `append` continues an existing file instead of
+  // truncating it.
+  bool open(bool append = false) {
     if (!LittleFS.begin(format_on_fail_)) return false;
-    file_ = LittleFS.open(path_, FILE_WRITE);
+    file_ = LittleFS.open(path_, append ? FILE_APPEND : FILE_WRITE);
     return static_cast<bool>(file_);
   }
 

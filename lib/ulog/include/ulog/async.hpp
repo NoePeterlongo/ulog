@@ -15,26 +15,11 @@
 
 #include <stdlib.h>
 
+#include "ulog/freertos_lock.hpp"
 #include "ulog/ring.hpp"
 #include "ulog/writer.hpp"
 
 namespace ulog {
-
-class FreeRtosLock final : public WriterLock {
- public:
-  FreeRtosLock() : mutex_(xSemaphoreCreateMutex()) {}
-  ~FreeRtosLock() override {
-    if (mutex_ != nullptr) vSemaphoreDelete(mutex_);
-  }
-  FreeRtosLock(const FreeRtosLock&) = delete;
-  FreeRtosLock& operator=(const FreeRtosLock&) = delete;
-
-  void lock() override { xSemaphoreTake(mutex_, portMAX_DELAY); }
-  void unlock() override { xSemaphoreGive(mutex_); }
-
- private:
-  SemaphoreHandle_t mutex_;
-};
 
 class AsyncWriter {
  public:

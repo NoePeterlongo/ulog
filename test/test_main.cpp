@@ -37,6 +37,13 @@ void test_log_text_empty();
 void test_writer_reports_sink_failure();
 void test_ring_zero_capacity();
 void test_ring_empty_messages();
+void test_spool_capacity_and_rotate();
+void test_spool_atomic_drops();
+void test_spool_watermark();
+void test_spool_two_buffers_independent();
+void test_log_summary_stats();
+void test_log_summary_truncated();
+void test_log_summary_streaming_chunks();
 
 int main(int argc, char **argv) {
   UNITY_BEGIN();
@@ -73,5 +80,12 @@ int main(int argc, char **argv) {
   RUN_TEST(test_writer_reports_sink_failure);
   RUN_TEST(test_ring_zero_capacity);
   RUN_TEST(test_ring_empty_messages);
+  RUN_TEST(test_spool_capacity_and_rotate);
+  RUN_TEST(test_spool_atomic_drops);
+  RUN_TEST(test_spool_watermark);
+  RUN_TEST(test_spool_two_buffers_independent);
+  RUN_TEST(test_log_summary_stats);
+  RUN_TEST(test_log_summary_truncated);
+  RUN_TEST(test_log_summary_streaming_chunks);
   return UNITY_END();
 }

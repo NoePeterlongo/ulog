@@ -13,8 +13,10 @@ LZ4 compression producing standard `.lz4` files.
 
 PlatformIO (recommended): copy `lib/ulog/` into your project's `lib/`
 directory — that is all; the library is picked up by the dependency scanner.
-For the LZ4 sink, copy this repo's `lib/lz4/` as well. Alternatively reference
-a git checkout:
+Only `ulog/lz4_sink.hpp` needs the vendored lz4: copy this repo's `lib/lz4/`
+too, or skip it — **everything else works without it** (lz4 is linked only
+when you actually include `lz4_sink.hpp`; including it without the library
+fails with an explicit `#error`). Alternatively reference a git checkout:
 
 ```ini
 # platformio.ini
@@ -112,42 +114,70 @@ of internal heap.
 
 Every littlefs write/erase suspends the flash cache and stalls code on
 both cores for tens of ms. If other tasks have hard timing requirements
-(control loops, state machines), don't touch flash while they run: log
-into a `RamSink` during the flight, then persist everything in one burst
-after landing:
+(control loops, state machines), don't touch flash while they run.
+
+Two flavors:
+
+**Streaming** (`RingBuffer` + `AsyncWriter` + `LittleFsSink`): logs are
+written to flash continuously through a ring buffer; overflow drops whole
+messages and reports them as `'O'` dropouts. For continuous, long-running
+logs where a small loss is acceptable.
+
+**Spool** (`SpoolSink`): the whole session stays in RAM in two
+pre-reserved buffers (no allocation in flight); `rotate()` hands the
+spooled bytes to the flash writer in O(1) while logging continues in the
+second buffer. When the spool is full, whole messages are dropped with
+dropout accounting — never an allocation failure, never a torn message.
+Capacity is the design margin: `>= rate * time between two persist()`.
+
+See the project root for the `LoggerBase` facade that packages the spool
+pattern (one file per boot, `persist()` on landing, `erase_flash()`,
+`restart()`, serial `debug_dump()`).
+
+## Flight recorder facade (`ulog/logger.hpp`)
+
+`ulog::LoggerBase` is the packaged drone pattern: one ULog stream per boot
+in RAM (`SpoolSink`), appended to a single LittleFS file at each
+`persist()` — call it when landed. Derive it per project:
 
 ```cpp
-#include "ulog/async.hpp"
-#include "ulog/littlefs_sink.hpp"
-#include "ulog/lz4_sink.hpp"
-#include "ulog/ram_sink.hpp"
+#include "ulog/logger.hpp"
 
-ulog::RamSink flight;              // the whole flight stays in RAM
-ulog::AsyncWriter::Config cfg;
-cfg.ring_storage = heap_caps_malloc(64 * 1024, MALLOC_CAP_SPIRAM);
-cfg.ring_size = 64 * 1024;
-ulog::AsyncWriter logger{flight, ulog::Writer::Config(), cfg};
-logger.start();
+class MyLogger : public ulog::LoggerBase {
+ public:
+  MyLogger() : LoggerBase("/log%03d.ulg") {}  // one file per boot
 
-// ... log at full rate: producers memcpy into the ring, the drain task
-//     drains into RAM, the flash is never touched ...
+  void log_imu(uint64_t ts, const float gyro[3], const float accel[3]) {
+    imu_.log(ImuSample{ts, {gyro[0], gyro[1], gyro[2]},
+                       {accel[0], accel[1], accel[2]}});
+  }
 
-logger.stop();                     // after landing, drains + joins
+ protected:
+  bool on_declare() override {   // runs after begin() and restart()
+    imu_ = declare("sensor_imu",
+                   "uint64_t timestamp;float[3] gyro_rad;float[3] accel_mps2;");
+    return static_cast<bool>(imu_);  // false = boot error
+  }
 
-ulog::LittleFsSink flash{"/flight001.ulg.lz4"};
-flash.open();
-ulog::Lz4Sink sink{flash};
-sink.write(flight.bytes().data(), flight.bytes().size());
-sink.finish();
-flash.close();
+ private:
+  struct __attribute__((packed)) ImuSample {
+    uint64_t timestamp;
+    float gyro_rad[3];
+    float accel_mps2[3];
+  };
+  ulog::Message imu_;
+};
 ```
 
-Budget the RAM: 200 Hz x 37 B is about 7.4 KB/s, so a 3-minute flight
-needs roughly 1.3 MB — PSRAM territory on the S3. The trade-off is the
-opposite of streaming to flash: a crash loses the whole flight, not just
-the tail since the last flush. A hybrid is possible (this pattern while
-things are hot, a second streaming `AsyncWriter` to littlefs for
-lower-rate background data).
+API: `begin()`, `persist()` (returns bytes written), `end()`,
+`erase_flash()` (formats the partition, seconds, ground only),
+`restart()` (fresh stream, `on_declare()` re-runs, handles refreshed),
+`debug_dump(Print&)` (human summary of file + spool over e.g. Serial),
+`pending()`, `spool_near_full()` (persist early if a stall is
+acceptable), `persisted_bytes()`, `dropped_ms()`, `session_path()`.
+
+`LoggerBase::Config`: `spool_capacity` (default 2 MB, PSRAM, doubled
+internally for the two spool buffers). Requires Arduino + LittleFS.
 
 ## Options
 
@@ -168,6 +198,14 @@ lower-rate background data).
 | `task_stack_bytes` | 4096 | Drain task stack. |
 | `task_priority` | 3 | Drain task priority. |
 | `task_core` | `tskNO_AFFINITY` | 0 or 1 to pin the drain task (e.g. 0, since Arduino `loop()` runs on core 1). |
+
+### `ulog::SpoolSink`
+
+`SpoolSink(buffer_a, buffer_b, capacity, now_us)`: two caller-allocated
+buffers (e.g. PSRAM, checked at boot), nothing allocated afterwards.
+`pending()`, `near_full(watermark)`, `rotate(&size)` (O(1) handover to a
+slow consumer), `take_dropped_ms()`. All methods must be serialized
+externally — share the `Writer`'s `WriterLock` (`FreeRtosLock`).
 
 ### `ulog::Lz4Sink::Config`
 
