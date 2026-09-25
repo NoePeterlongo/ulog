@@ -214,6 +214,18 @@ class LoggerBase {
   uint32_t dropped_ms() const { return dropped_total_ms_; }
   const char* session_path() const { return active_path_; }
 
+  // Text logging, callable from any task at any time: thread-safe, and
+  // returns false when no session is running (before begin(), after end()).
+  bool log_text(Level level, const char* text) {
+    return writer_ != nullptr && writer_->log_text(level, text);
+  }
+  bool log_text(Level level, const char* text, size_t length) {
+    return writer_ != nullptr && writer_->log_text(level, text, length);
+  }
+  bool log_info(const char* text) { return log_text(Level::Info, text); }
+  bool log_warning(const char* text) { return log_text(Level::Warning, text); }
+  bool log_error(const char* text) { return log_text(Level::Error, text); }
+
   size_t pending() const {
     lock_.lock();
     const size_t value = spool_ != nullptr ? spool_->pending() : 0;
@@ -250,9 +262,6 @@ class LoggerBase {
   }
   bool add_param(const char* name, float value) {
     return writer_ != nullptr && writer_->add_param(name, value);
-  }
-  bool log_text(Level level, const char* text) {
-    return writer_ != nullptr && writer_->log_text(level, text);
   }
 
  private:

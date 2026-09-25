@@ -151,7 +151,10 @@ All example outputs parse with pyulog; try `pip install pyulog` and
 seconds, ground only) / `restart()` (fresh stream, `on_declare()` re-runs,
 handles refreshed) / `debug_dump(Print&)` / `pending()`, `spool_near_full()`
 (persist early if a stall is acceptable), `persisted_bytes()`, `dropped_ms()`,
-`session_path()`. `LoggerBase::Config`: `spool_capacity` (default 2 MB,
+`session_path()`. Text logging is public and callable from any task:
+`log_text(Level, const char*)` plus `log_info()` / `log_warning()` /
+`log_error()` shortcuts; they return false outside a session.
+`LoggerBase::Config`: `spool_capacity` (default 2 MB,
 PSRAM, doubled internally for the two spool buffers).
 
 ### `ulog::AsyncWriter::Config` (streaming profile)
