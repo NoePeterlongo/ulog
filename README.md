@@ -14,13 +14,13 @@ in any of the standard ways:
 ```ini
 # platformio.ini of the consuming project
 [env:my-drone]
-lib_deps = https://github.com/USER/ulog.git     # or a tag: ...git#v0.1.0
+lib_deps = https://github.com/NoePeterlongo/ulog.git     # or a tag: ...git#v0.1.0
 ```
 
 or as a git submodule:
 
 ```bash
-git submodule add https://github.com/USER/ulog.git lib/ulog
+git submodule add https://github.com/NoePeterlongo/ulog.git lib/ulog
 ```
 
 or simply copy the repository into `lib/`. Only `ulog/lz4_sink.hpp` needs
